@@ -19,10 +19,6 @@ from lockfile import FilesystemLock
 
 APC_ESCAPE = '\033'
 
-APC_IMMEDIATE_REBOOT = 'olReboot'
-APC_IMMEDIATE_ON     = 'olOn'
-APC_IMMEDIATE_OFF    = 'olOff'
-
 APC_LOGOUT = '4'
 
 APC_VERSION_PATTERN = re.compile(' v(\d+\.\d+\.\d+)')
@@ -51,7 +47,6 @@ class APC:
         print('APC %s: %s %s' % (self.host, outlet_name, state))
 
     def sendnl(self, a):
-        #print "a = %s" %a
         self.child.send(a + '\r')
         if self.verbose:
             print(self.child.before)
@@ -105,27 +100,13 @@ class APC:
             except:
                 raise SystemExit('Bad outlet: [%s]' % outlet)
 
-#    def configure_outlet(self, outlet):
-#        if self.is_new_version:
-#            self.sendnl('1')
-#            self.sendnl('2')
-#            self.sendnl('1')
-#            self.sendnl(str(outlet))
-
-#            self.sendnl('1')
-
-#        else:
-#            self.sendnl('1')
-#            self.sendnl('1')
-#            self.sendnl(str(outlet))
-
-#            self.sendnl('1')
-
-#        self.child.before
-
     def get_command_result(self):
         self.child.expect('E000: Success')
-        self.child.after
+        print self.child.after
+
+    def get_result(self, outlet):
+        self.child.logfile=sys.stdout
+        self.child.expect('%d:' %outlet)
 
     def _escape_to_main(self):
         for i in range(6):
@@ -134,13 +115,9 @@ class APC:
     def reboot(self, outlet):
         (outlet, outlet_name) = self.get_outlet(outlet)
 
-        #self.configure_outlet(outlet)
+        cmd = 'olReboot %d' %outlet
 
-        self.sendnl(APC_IMMEDIATE_REBOOT[self.is_new_version])
-
-        self.child.expect('Immediate Reboot')
-        self.sendnl(APC_YES)
-        self.sendnl('')
+        self.sendnl(cmd)
 
         self.get_command_result()
 
@@ -151,11 +128,8 @@ class APC:
     def on_off(self, outlet, on):
         (outlet, outlet_name) = self.get_outlet(outlet)
 
-        #self.configure_outlet(outlet)
-
         if on:
-            #print outlet
-            cmd = 'olOn  %d' %outlet
+            cmd = 'olOn %d' %outlet
             str_cmd = 'On'
         else:
             cmd = 'olOff %d' %outlet
@@ -166,6 +140,17 @@ class APC:
         self.get_command_result()
 
         self.notify(outlet_name, str_cmd)
+
+        self._escape_to_main()
+
+    def get(self, outlet):
+        (outlet, outlet_name) = self.get_outlet(outlet)
+
+        cmd = 'olStatus %d' %outlet
+
+        self.sendnl(cmd)
+
+        self.get_result(outlet)
 
         self._escape_to_main()
 
@@ -214,10 +199,11 @@ def main():
                         help='Turn off an outlet')
     parser.add_argument('--on', action='store',
                         help='Turn on an outlet')
-
+    parser.add_argument('--get', action='store',
+                        help='Get the status of an outlet')
     args = parser.parse_args()
 
-    is_command_specified = (args.reboot or args.debug or args.on or args.off)
+    is_command_specified = (args.reboot or args.debug or args.on or args.off or args.get)
 
     if not is_command_specified:
         parser.print_usage()
@@ -238,6 +224,8 @@ def main():
                 apc.on(args.on)
             elif args.off:
                 apc.off(args.off)
+            elif args.get:
+                apc.get(args.get)
         except pexpect.TIMEOUT as e:
             raise SystemExit('APC failed!  Pexpect result:\n%s' % e)
         finally:
