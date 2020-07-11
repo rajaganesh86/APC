@@ -112,12 +112,18 @@ class APC:
         for i in range(6):
             self.child.send(APC_ESCAPE)
 
-    def reboot(self, outlet):
+    def reboot(self, outlet, secs):
         (outlet, outlet_name) = self.get_outlet(outlet)
 
-        cmd = 'olReboot %d' %outlet
+        if secs in range(5, 61):
+            cmd1 = 'olRbootTime %d %d' %(outlet, secs)
+        else:
+            print "Enter time delay in seconds between 5 and 60"
+            raise SystemExit(1)
+        cmd2 = 'olReboot %d' %outlet
 
-        self.sendnl(cmd)
+        self.sendnl(cmd1)
+        self.sendnl(cmd2)
 
         self.get_command_result()
 
