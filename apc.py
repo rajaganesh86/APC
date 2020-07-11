@@ -1,11 +1,7 @@
 #!/usr/bin/env python
 '''
-APC Network PDU Controller
+APC IP Power Controller
 
-Payton Quackenbush
-Modified by Sebastien Celles
-
-Tested with AP7900, but should work with similar models.
 '''
 
 import pexpect
@@ -13,13 +9,14 @@ import os
 import re
 import time
 import sys
+import pdb
 
 from argparse import ArgumentParser
 from lockfile import FilesystemLock
 
 APC_ESCAPE = '\033'
 
-APC_LOGOUT = '4'
+APC_LOGOUT = 'bye'
 
 APC_VERSION_PATTERN = re.compile(' v(\d+\.\d+\.\d+)')
 
@@ -74,12 +71,11 @@ class APC:
 
         self.child.timeout = 10
         self.child.setecho(True)
-        #self.child.logfile=sys.stdout
 
         self.child.expect('User Name : ')
-        time.sleep(2)
+        time.sleep(1)
         self.child.send(self.user + '\r')
-        time.sleep(2)
+        time.sleep(1)
         self.child.expect('Password  : ')
         self.child.send(self.password + '\r')
         self.child.send('\r\n')
@@ -89,8 +85,8 @@ class APC:
         match = APC_VERSION_PATTERN.search(str(header))
 
     def get_outlet(self, outlet):
-        if str(outlet) in ['*', '+', '9']:
-            return (9, 'ALL outlets')
+        if str(outlet) in ['*', '+', 'all']:
+            return ('all', 'ALL outlets')
         else:
             # Assume integer outlet
             try:
@@ -102,11 +98,15 @@ class APC:
 
     def get_command_result(self):
         self.child.expect('E000: Success')
-        print self.child.after
+        print(self.child.after)
 
     def get_result(self, outlet):
-        self.child.logfile=sys.stdout
-        self.child.expect('%d:' %outlet)
+        try: 
+            self.child.logfile=sys.stdout
+            self.child.expect('%d:' %outlet)
+        except:
+            self.child.expect('E102:')
+            raise SystemExit('Bad outlet: [%s]' % outlet)
 
     def _escape_to_main(self):
         for i in range(6):
@@ -118,7 +118,7 @@ class APC:
         if secs in range(5, 61):
             cmd1 = 'olRbootTime %d %d' %(outlet, secs)
         else:
-            print "Enter time delay in seconds between 5 and 60"
+            print("Enter time delay in seconds between 5 and 60")
             raise SystemExit(1)
         cmd2 = 'olReboot %d' %outlet
 
@@ -128,8 +128,6 @@ class APC:
         self.get_command_result()
 
         self.notify(outlet_name, 'Rebooted')
-
-        self._escape_to_main()
 
     def on_off(self, outlet, on):
         (outlet, outlet_name) = self.get_outlet(outlet)
@@ -147,18 +145,20 @@ class APC:
 
         self.notify(outlet_name, str_cmd)
 
-        self._escape_to_main()
-
     def get(self, outlet):
         (outlet, outlet_name) = self.get_outlet(outlet)
 
-        cmd = 'olStatus %d' %outlet
-
-        self.sendnl(cmd)
-
-        self.get_result(outlet)
-
-        self._escape_to_main()
+        if outlet == 'all': 
+            cmd = 'olStatus %s' %outlet
+            self.child.logfile=sys.stdout
+            self.child.send(cmd + '\r')
+            time.sleep(2)
+            self.child.expect('apc>')
+            print(self.child.readline())
+        else:
+            cmd = 'olStatus %d' %outlet
+            self.sendnl(cmd)
+            self.get_result(outlet)
 
     def on(self, outlet):
         self.on_off(outlet, True)
@@ -206,7 +206,7 @@ def main():
     parser.add_argument('--on', action='store',
                         help='Turn on an outlet')
     parser.add_argument('--get', action='store',
-                        help='Get the status of an outlet')
+                        help='Get the status of an outlet. Enter number 1 to 8 or all')
     args = parser.parse_args()
 
     is_command_specified = (args.reboot or args.debug or args.on or args.off or args.get)
